@@ -25,12 +25,19 @@ GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-1.5-flash")
 
 
+def is_api_key_configured() -> bool:
+    """Check if a real Gemini API key is configured."""
+    key = os.getenv("GOOGLE_API_KEY") or GOOGLE_API_KEY
+    if not key or not key.strip() or "your_gemini_api_key" in key or key == "your_key_here":
+        return False
+    return True
+
+
 def require_api_key() -> str:
     """Validate that GOOGLE_API_KEY is present; raise EnvironmentError if missing."""
-    key = os.getenv("GOOGLE_API_KEY") or GOOGLE_API_KEY
-    if not key or not key.strip():
+    if not is_api_key_configured():
         raise EnvironmentError(
-            "GOOGLE_API_KEY is not set. "
+            "GOOGLE_API_KEY is not configured. "
             "Please copy .env.example to .env and configure your Gemini API key."
         )
-    return key.strip()
+    return (os.getenv("GOOGLE_API_KEY") or GOOGLE_API_KEY).strip()
