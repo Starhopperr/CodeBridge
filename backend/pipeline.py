@@ -1,5 +1,5 @@
 """
-pipeline.py — 4-step LLM pipeline for CodeBridge with Live Gemini & Fallback Demo Mode.
+pipeline.py — 4-step LLM pipeline for CodeBridge using modern google-genai SDK.
 
 Steps:
   P1  Static analysis of source code
@@ -15,8 +15,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-import google.generativeai as genai
-from google.generativeai.types import HarmBlockThreshold, HarmCategory
+from google import genai
+from google.genai import types
 
 from config import MODEL_NAME, is_api_key_configured, require_api_key
 from prompts import build_p1_prompt, build_p2_prompt, build_p3_prompt, build_p4_prompt
@@ -41,18 +41,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("codebridge.pipeline")
 
-SAFETY_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-
-GENERATION_CONFIG = genai.GenerationConfig(
-    temperature=0.1,
-    response_mime_type="application/json",
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -68,15 +56,17 @@ def _strip_markdown_fences(text: str) -> str:
     return text
 
 
-def _call_model(system_prompt: str, user_prompt: str, step_name: str) -> str:
-    """Call the Gemini model with a system + user prompt."""
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        system_instruction=system_prompt,
-        generation_config=GENERATION_CONFIG,
-        safety_settings=SAFETY_SETTINGS,
+def _call_model(client: genai.Client, system_prompt: str, user_prompt: str, step_name: str) -> str:
+    """Call the Gemini model with modern google.genai client."""
+    response = client.models.generate_content(
+        model=MODEL_NAME,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.1,
+            response_mime_type="application/json",
+        ),
     )
-    response = model.generate_content(user_prompt)
     raw_text: str = response.text if response.text else ""
     logger.info(
         "[%s] model=%s response_length=%d chars",
@@ -305,7 +295,7 @@ def _generate_fallback_response(request: TranslateRequest) -> TranslateResponse:
 
 def run_pipeline(request: TranslateRequest) -> TranslateResponse:
     """
-    Execute the 4-step CodeBridge pipeline.
+    Execute the 4-step CodeBridge pipeline using google.genai.
     If GOOGLE_API_KEY is not configured, seamlessly runs in offline demonstration mode
     to ensure the prototype is always functional for evaluators.
     """
@@ -317,9 +307,9 @@ def run_pipeline(request: TranslateRequest) -> TranslateResponse:
 
     try:
         api_key = require_api_key()
-        genai.configure(api_key=api_key)
+        client = genai.Client(api_key=api_key)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to configure Gemini API: %s. Falling back to demo mode.", exc)
+        logger.warning("Failed to configure google.genai Client: %s. Falling back to demo mode.", exc)
         return _generate_fallback_response(request)
 
     source_code = request.source_code
@@ -335,7 +325,7 @@ def run_pipeline(request: TranslateRequest) -> TranslateResponse:
 
     try:
         sys_p, usr_p = build_p1_prompt(source_lang, source_code, user_context)
-        raw_p1 = _call_model(sys_p, usr_p, "P1-Analysis")
+        raw_p1 = _call_model(client, sys_p, usr_p, "P1-Analysis")
         p1_data = _parse_json(raw_p1, "P1-Analysis")
         p1_obj = P1Analysis.model_validate(p1_data)
         p1_json_str = json.dumps(p1_data, ensure_ascii=False)
@@ -354,7 +344,7 @@ def run_pipeline(request: TranslateRequest) -> TranslateResponse:
 
     try:
         sys_p, usr_p = build_p2_prompt(source_lang, target_lang, source_code, p1_json_str)
-        raw_p2 = _call_model(sys_p, usr_p, "P2-Translation")
+        raw_p2 = _call_model(client, sys_p, usr_p, "P2-Translation")
         p2_data = _parse_json(raw_p2, "P2-Translation")
         p2_obj = P2Translation.model_validate(p2_data)
         translated_code = p2_obj.translated_code or ""
@@ -375,7 +365,7 @@ def run_pipeline(request: TranslateRequest) -> TranslateResponse:
         sys_p, usr_p = build_p3_prompt(
             source_lang, target_lang, source_code, p1_json_str, translated_code
         )
-        raw_p3 = _call_model(sys_p, usr_p, "P3-Review")
+        raw_p3 = _call_model(client, sys_p, usr_p, "P3-Review")
         p3_data = _parse_json(raw_p3, "P3-Review")
         p3_obj = P3Review.model_validate(p3_data)
         p3_json_str = json.dumps(p3_data, ensure_ascii=False)
@@ -399,7 +389,7 @@ def run_pipeline(request: TranslateRequest) -> TranslateResponse:
             p1_json_str,
             p3_json_str,
         )
-        raw_p4 = _call_model(sys_p, usr_p, "P4-Tests")
+        raw_p4 = _call_model(client, sys_p, usr_p, "P4-Tests")
         p4_data = _parse_json(raw_p4, "P4-Tests")
         p4_obj = P4Tests.model_validate(p4_data)
         logger.info("[P4-Tests] parsed OK")

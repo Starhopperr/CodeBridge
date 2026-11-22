@@ -62,11 +62,12 @@ $failures = @()
 
 foreach ($relPath in $trackedFiles) {
     if ([string]::IsNullOrWhiteSpace($relPath)) { continue }
+    $relPath = $relPath.Trim('"', "'")
     if (Should-Skip $relPath) { continue }
 
     $fullPath = Join-Path $projectRoot $relPath
 
-    if (-not (Test-Path $fullPath -PathType Leaf)) { continue }
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { continue }
 
     try {
         $content = Get-Content $fullPath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
