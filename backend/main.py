@@ -63,6 +63,7 @@ async def health() -> Dict[str, Any]:
 
 
 @app.post("/api/translate", response_model=TranslateResponse)
+@app.post("/translate", response_model=TranslateResponse)
 async def translate(request: TranslateRequest) -> TranslateResponse:
     """
     Run the 4-step CodeBridge pipeline on the supplied source code.

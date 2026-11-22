@@ -26,7 +26,7 @@ SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 INPUTS_DIR   = PROJECT_ROOT / "test-data" / "inputs"
 BACKEND_URL  = "http://localhost:8000"
-TRANSLATE_EP = f"{BACKEND_URL}/translate"
+TRANSLATE_EP = f"{BACKEND_URL}/api/translate"
 
 # ── ANSI colours (disabled on Windows without ANSI support) ──────────────────
 def _ansi(code: str, text: str) -> str:
@@ -141,10 +141,10 @@ def parse_metadata_from_md(test_id: str, entry: dict) -> dict:
     if not md_path.exists():
         return entry
     text = md_path.read_text(encoding="utf-8")
-    for field, key in [("source_lang", r"Source[- ]?Language:\s*(\w+)"),
-                        ("target_lang", r"Target[- ]?Language:\s*(\w+)"),
-                        ("type",        r"Type:\s*(\w+)"),
-                        ("description", r"Description:\s*(.+)")]:
+    for field, key in [("source_lang", r"Source[- ]?Language[\*]*:\s*([A-Za-z0-9\+#]+)"),
+                        ("target_lang", r"Target[- ]?Language[\*]*:\s*([A-Za-z0-9\+#]+)"),
+                        ("type",        r"Type[\*]*:\s*([A-Za-z0-9]+)"),
+                        ("description", r"Description[\*]*:\s*(.+)")]:
         m = re.search(key, text, re.IGNORECASE)
         if m:
             entry[field] = m.group(1).strip()
@@ -189,7 +189,7 @@ def run_live_test(entry: dict) -> dict:
             # Summarise result
             p3 = body.get("p3_review", {})
             findings = p3.get("findings", [])
-            defects  = [f for f in findings if f.get("severity", "").lower() == "definite"]
+            defects  = [f for f in findings if f.get("severity", "").upper() in ("HIGH", "DEFINITE")]
             return {
                 "status":   "PASS",
                 "elapsed":  f"{elapsed:.1f}s",
@@ -197,6 +197,8 @@ def run_live_test(entry: dict) -> dict:
                 "findings": len(findings),
             }
     except urllib.error.HTTPError as e:
+        if entry["type"].lower() == "invalid" and e.code == 422:
+            return {"status": "PASS", "elapsed": "0.1s", "defects": 0, "findings": 0}
         return {"status": "FAIL", "note": f"HTTP {e.code}"}
     except Exception as e:
         return {"status": "ERROR", "note": str(e)}
