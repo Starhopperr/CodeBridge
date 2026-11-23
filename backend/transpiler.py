@@ -1,7 +1,8 @@
 """
 transpiler.py — Robust multi-language code transpiler for CodeBridge.
 Translates code cleanly between Python, Java, and C++ (all 6 directions),
-ensuring translations are syntactically and semantically accurate.
+ensuring translations include proper entry points (public class Main, int main(), if __name__ == '__main__')
+and accurate semantics.
 """
 from __future__ import annotations
 
@@ -20,9 +21,19 @@ class PythonToJavaTranspiler(ast.NodeVisitor):
         self.declared_vars: Set[str] = set()
         self.has_math = False
         self.has_arrays = False
+        self.functions: List[str] = []
 
     def indent(self) -> str:
         return "    " * self.indent_level
+
+    def is_main_guard(self, node: ast.AST) -> bool:
+        if not isinstance(node, ast.If):
+            return False
+        if isinstance(node.test, ast.Compare):
+            left_str = ast.unparse(node.test.left) if hasattr(ast, "unparse") else ""
+            if "__name__" in left_str:
+                return True
+        return False
 
     def transpile(self, source_code: str) -> str:
         try:
@@ -30,24 +41,49 @@ class PythonToJavaTranspiler(ast.NodeVisitor):
         except SyntaxError as e:
             return f"// Syntax Error in source Python code at line {e.lineno}:\n// {e.msg}\n// Please correct the syntax."
 
-        body_lines: List[str] = []
+        func_nodes = []
+        top_level_nodes = []
         for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                func_nodes.append(node)
+            elif self.is_main_guard(node):
+                top_level_nodes.extend(node.body)
+            else:
+                top_level_nodes.append(node)
+
+        body_lines: List[str] = []
+
+        # 1. Helper functions & classes
+        for node in func_nodes:
             if isinstance(node, ast.FunctionDef):
+                self.functions.append(node.name)
                 func_code = self.visit_function(node)
                 body_lines.append(func_code)
             elif isinstance(node, ast.ClassDef):
                 class_code = self.visit_class(node)
                 body_lines.append(class_code)
-            elif isinstance(node, (ast.Assign, ast.Expr)):
+
+        # 2. Main method (standard Java entry point)
+        main_lines = ["    public static void main(String[] args) {"]
+        self.indent_level = 2
+        self.declared_vars = set()
+        if top_level_nodes:
+            for node in top_level_nodes:
                 line = self.visit_statement(node)
                 if line:
-                    body_lines.append(self.indent() + line)
+                    main_lines.append(self.indent() + line)
+        else:
+            main_lines.append(self.indent() + "// Entry point")
+        self.indent_level = 1
+        main_lines.append("    }")
+
+        body_lines.append("\n".join(main_lines))
 
         imports = ["import java.util.*;"]
         if self.has_math:
             imports.append("import java.lang.Math;")
 
-        out = "\n".join(imports) + "\n\npublic class Solution {\n"
+        out = "\n".join(imports) + "\n\npublic class Main {\n"
         out += "\n\n".join(body_lines)
         out += "\n}\n"
         return out
@@ -315,24 +351,56 @@ class PythonToCppTranspiler(ast.NodeVisitor):
     def indent(self) -> str:
         return "    " * self.indent_level
 
+    def is_main_guard(self, node: ast.AST) -> bool:
+        if not isinstance(node, ast.If):
+            return False
+        if isinstance(node.test, ast.Compare):
+            left_str = ast.unparse(node.test.left) if hasattr(ast, "unparse") else ""
+            if "__name__" in left_str:
+                return True
+        return False
+
     def transpile(self, source_code: str) -> str:
         try:
             tree = ast.parse(source_code)
         except SyntaxError as e:
             return f"// Syntax Error in source Python code at line {e.lineno}:\n// {e.msg}\n// Please correct the syntax."
 
-        body_lines: List[str] = []
+        func_nodes = []
+        top_level_nodes = []
         for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                func_nodes.append(node)
+            elif self.is_main_guard(node):
+                top_level_nodes.extend(node.body)
+            else:
+                top_level_nodes.append(node)
+
+        body_lines: List[str] = []
+        for node in func_nodes:
             if isinstance(node, ast.FunctionDef):
                 func_code = self.visit_function(node)
                 body_lines.append(func_code)
-            elif isinstance(node, (ast.Assign, ast.Expr)):
+
+        # Standard C++ int main() entry point
+        main_lines = ["int main() {"]
+        self.indent_level = 1
+        self.declared_vars = set()
+        if top_level_nodes:
+            for node in top_level_nodes:
                 line = self.visit_statement(node)
                 if line:
-                    body_lines.append(line)
+                    main_lines.append(self.indent() + line)
+        main_lines.append(self.indent() + "return 0;")
+        self.indent_level = 0
+        main_lines.append("}")
+
+        body_lines.append("\n".join(main_lines))
 
         includes = []
-        if self.has_iostream:
+        # Check if print or top-level output is used
+        has_print = any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "print" for n in ast.walk(tree))
+        if self.has_iostream or has_print:
             includes.append("#include <iostream>")
         if self.has_vector:
             includes.append("#include <vector>")
@@ -596,10 +664,14 @@ def clean_c_expr(expr: str) -> str:
 def java_or_cpp_to_python(code: str) -> str:
     lines = code.splitlines()
     out_lines: List[str] = []
+    main_lines: List[str] = []
     indent_level = 0
+    in_main = False
+    main_indent = 1
 
-    def indent() -> str:
-        return "    " * indent_level
+    def indent(lvl=None) -> str:
+        cur = indent_level if lvl is None else lvl
+        return "    " * cur
 
     i = 0
     while i < len(lines):
@@ -613,11 +685,15 @@ def java_or_cpp_to_python(code: str) -> str:
             continue
 
         if raw_line == "}":
-            if indent_level > 0:
+            if in_main:
+                in_main = False
+            elif indent_level > 0:
                 indent_level -= 1
             continue
         elif raw_line.startswith("}"):
-            if indent_level > 0:
+            if in_main:
+                in_main = False
+            elif indent_level > 0:
                 indent_level -= 1
             raw_line = raw_line[1:].strip()
 
@@ -641,6 +717,10 @@ def java_or_cpp_to_python(code: str) -> str:
             func_name = m_func.group(2)
             raw_params = m_func.group(3).strip()
 
+            if func_name == "main":
+                in_main = True
+                continue
+
             clean_params = []
             if raw_params:
                 for p in raw_params.split(","):
@@ -655,6 +735,13 @@ def java_or_cpp_to_python(code: str) -> str:
 
             out_lines.append(f"{indent()}def {func_name}({', '.join(clean_params)}):")
             indent_level += 1
+            continue
+
+        target_list = main_lines if in_main else out_lines
+        curr_lvl = main_indent if in_main else indent_level
+
+        # Skip return 0; in main
+        if in_main and raw_line.startswith("return 0"):
             continue
 
         # For loop: range
@@ -676,12 +763,15 @@ def java_or_cpp_to_python(code: str) -> str:
                 stop_val = f"{stop_val} + 1"
 
             if start_val == "0" and not step:
-                out_lines.append(f"{indent()}for {var_name} in range({stop_val}):")
+                target_list.append(f"{indent(curr_lvl)}for {var_name} in range({stop_val}):")
             elif step:
-                out_lines.append(f"{indent()}for {var_name} in range({start_val}, {stop_val}, {step}):")
+                target_list.append(f"{indent(curr_lvl)}for {var_name} in range({start_val}, {stop_val}, {step}):")
             else:
-                out_lines.append(f"{indent()}for {var_name} in range({start_val}, {stop_val}):")
-            indent_level += 1
+                target_list.append(f"{indent(curr_lvl)}for {var_name} in range({start_val}, {stop_val}):")
+            if in_main:
+                main_indent += 1
+            else:
+                indent_level += 1
             continue
 
         # For loop: foreach
@@ -689,16 +779,22 @@ def java_or_cpp_to_python(code: str) -> str:
         if m_for_each:
             var_name = m_for_each.group(1)
             iterable = m_for_each.group(2).strip()
-            out_lines.append(f"{indent()}for {var_name} in {iterable}:")
-            indent_level += 1
+            target_list.append(f"{indent(curr_lvl)}for {var_name} in {iterable}:")
+            if in_main:
+                main_indent += 1
+            else:
+                indent_level += 1
             continue
 
         # While loop
         m_while = re.match(r"while\s*\((.*)\)\s*\{?", raw_line)
         if m_while:
             cond = clean_c_expr(m_while.group(1).strip())
-            out_lines.append(f"{indent()}while {cond}:")
-            indent_level += 1
+            target_list.append(f"{indent(curr_lvl)}while {cond}:")
+            if in_main:
+                main_indent += 1
+            else:
+                indent_level += 1
             continue
 
         # If / Elif / Else
@@ -706,26 +802,27 @@ def java_or_cpp_to_python(code: str) -> str:
             m_elif = re.match(r"(?:else if|elif)\s*\((.*)\)\s*\{?", raw_line)
             if m_elif:
                 cond = clean_c_expr(m_elif.group(1).strip())
-                out_lines.append(f"{indent()}elif {cond}:")
-                indent_level += 1
+                target_list.append(f"{indent(curr_lvl)}elif {cond}:")
                 continue
         elif raw_line.startswith("if"):
             m_if = re.match(r"if\s*\((.*)\)\s*\{?", raw_line)
             if m_if:
                 cond = clean_c_expr(m_if.group(1).strip())
-                out_lines.append(f"{indent()}if {cond}:")
-                indent_level += 1
+                target_list.append(f"{indent(curr_lvl)}if {cond}:")
+                if in_main:
+                    main_indent += 1
+                else:
+                    indent_level += 1
                 continue
         elif raw_line.startswith("else"):
-            out_lines.append(f"{indent()}else:")
-            indent_level += 1
+            target_list.append(f"{indent(curr_lvl)}else:")
             continue
 
         # Throw / raise
         m_throw = re.match(r"throw\s+(?:new\s+)?[A-Za-z0-9_:]+\s*\((.*)\);?", raw_line)
         if m_throw:
             msg = m_throw.group(1).strip()
-            out_lines.append(f"{indent()}raise ValueError({msg})")
+            target_list.append(f"{indent(curr_lvl)}raise ValueError({msg})")
             continue
 
         # Return
@@ -734,16 +831,16 @@ def java_or_cpp_to_python(code: str) -> str:
             expr = m_ret.group(1)
             if expr:
                 expr = clean_c_expr(expr.rstrip(";").strip())
-                out_lines.append(f"{indent()}return {expr}")
+                target_list.append(f"{indent(curr_lvl)}return {expr}")
             else:
-                out_lines.append(f"{indent()}return")
+                target_list.append(f"{indent(curr_lvl)}return")
             continue
 
         # Print / println / cout
         m_sysout = re.match(r"System\.out\.println\((.*)\);?", raw_line)
         if m_sysout:
             arg = clean_c_expr(m_sysout.group(1).rstrip(";").strip())
-            out_lines.append(f"{indent()}print({arg})")
+            target_list.append(f"{indent(curr_lvl)}print({arg})")
             continue
         if "cout" in raw_line:
             line_cout = raw_line.replace("std::cout", "").replace("cout", "")
@@ -753,7 +850,7 @@ def java_or_cpp_to_python(code: str) -> str:
                 if p.strip() and p.strip() not in ("std::endl;", "endl;", ";", "std::endl", "endl")
             ]
             arg = ", ".join(clean_c_expr(p) for p in parts)
-            out_lines.append(f"{indent()}print({arg})")
+            target_list.append(f"{indent(curr_lvl)}print({arg})")
             continue
 
         # Assignment / expression
@@ -765,9 +862,15 @@ def java_or_cpp_to_python(code: str) -> str:
         ).strip()
         stmt = clean_c_expr(stmt)
         if stmt:
-            out_lines.append(f"{indent()}{stmt}")
+            target_list.append(f"{indent(curr_lvl)}{stmt}")
 
-    return "\n".join(out_lines)
+    full_output = []
+    if out_lines:
+        full_output.append("\n".join(out_lines))
+    if main_lines:
+        full_output.append('if __name__ == "__main__":\n' + "\n".join(main_lines))
+
+    return "\n\n".join(full_output) if full_output else "# Translated code"
 
 
 # ===========================================================================
@@ -778,8 +881,24 @@ def java_to_cpp(code: str) -> str:
     out = code
     out = re.sub(r"import\s+[^;]+;\s*", "", out)
     out = re.sub(r"package\s+[^;]+;\s*", "", out)
-    out = re.sub(r"public\s+class\s+([A-Za-z0-9_]+)\s*\{", r"class \1 {\npublic:", out)
-    out = re.sub(r"\bpublic\s+static\s+", "static ", out)
+
+    has_java_main = bool(re.search(r"\bvoid\s+main\s*\(", out))
+
+    # Strip class header and closing brace
+    out = re.sub(r"(?:public\s+)?class\s+[A-Za-z0-9_]+\s*\{", "", out)
+    lines = out.splitlines()
+    clean_lines = []
+    found_last_brace = False
+    for l in reversed(lines):
+        if not found_last_brace and l.strip() == "}":
+            found_last_brace = True
+            continue
+        clean_lines.append(l)
+    out = "\n".join(reversed(clean_lines))
+
+    # Convert Java main method to int main()
+    out = re.sub(r"\b(?:public\s+)?(?:static\s+)?void\s+main\s*\([^)]*\)\s*\{", "int main() {", out)
+    out = re.sub(r"\bpublic\s+static\s+", "", out)
     out = re.sub(r"\bpublic\s+", "", out)
     out = re.sub(r"System\.out\.println\((.*?)\);", r"std::cout << \1 << std::endl;", out)
     out = re.sub(r"System\.out\.print\((.*?)\);", r"std::cout << \1;", out)
@@ -803,6 +922,10 @@ def java_to_cpp(code: str) -> str:
         "#include <cmath>",
         "#include <stdexcept>",
     ]
+
+    if not has_java_main:
+        out = out.strip() + "\n\nint main() {\n    return 0;\n}"
+
     return "\n".join(headers) + "\n\n" + out.strip() + "\n"
 
 
@@ -814,6 +937,9 @@ def cpp_to_java(code: str) -> str:
             continue
         clean_lines.append(l)
     out = "\n".join(clean_lines).strip()
+
+    has_cpp_main = bool(re.search(r"\bint\s+main\s*\(", out))
+
     out = re.sub(r"std::cout\s*<<\s*(.*?)\s*<<\s*std::endl;", r"System.out.println(\1);", out)
     out = re.sub(r"std::string", "String", out)
     out = re.sub(r"\bbool\b", "boolean", out)
@@ -825,6 +951,10 @@ def cpp_to_java(code: str) -> str:
     out = re.sub(r"std::abs\(", "Math.abs(", out)
     out = re.sub(r"([A-Za-z0-9_]+)\.size\(\)", r"\1.length", out)
 
+    # Convert int main() to public static void main(String[] args)
+    out = re.sub(r"\bint\s+main\s*\([^)]*\)\s*\{", "public static void main(String[] args) {", out)
+    out = re.sub(r"return\s+0;\s*", "", out)
+
     # Polish method headers: remove const and &, add public static
     polished_lines = []
     for l in out.splitlines():
@@ -832,17 +962,19 @@ def cpp_to_java(code: str) -> str:
             l = re.sub(r"const\s+", "", l)
             l = re.sub(r"&", "", l)
             if not l.strip().startswith(("public", "private", "protected")):
-                indent = " " * (len(l) - len(l.lstrip()))
-                l = indent + "public static " + l.strip()
+                l = "    public static " + l.strip()
+            else:
+                l = "    " + l.strip()
+        else:
+            if l.strip():
+                l = "    " + l.strip()
         polished_lines.append(l)
     out = "\n".join(polished_lines)
 
-    if "class " not in out:
-        indented = "\n".join("    " + l for l in out.splitlines())
-        out = f"import java.util.*;\n\npublic class Solution {{\n{indented}\n}}\n"
-    else:
-        out = f"import java.util.*;\n\n{out}\n"
-    return out
+    if not has_cpp_main:
+        out = out + "\n\n    public static void main(String[] args) {\n        // Entry point\n    }"
+
+    return f"import java.util.*;\n\npublic class Main {{\n{out}\n}}\n"
 
 
 # ===========================================================================
@@ -852,7 +984,8 @@ def cpp_to_java(code: str) -> str:
 def translate_code(source_code: str, source_language: str, target_language: str) -> Tuple[str, List[str], List[str]]:
     """
     Translates code between Python, Java, and C++ (all 6 combinations).
-    Returns (translated_code, differences_list, findings_notes).
+    Guarantees standard execution entry points: public class Main with main(String[] args) in Java,
+    int main() in C++, and if __name__ == '__main__': in Python.
     """
     src = source_language.strip().lower()
     tgt = target_language.strip().lower()
@@ -866,8 +999,8 @@ def translate_code(source_code: str, source_language: str, target_language: str)
         transpiler = PythonToJavaTranspiler()
         res = transpiler.transpile(code)
         diffs = [
+            "Generated standard executable entry point: public class Main with public static void main(String[] args).",
             "Python dynamic typing mapped to static Java types (int, String, boolean, int[]).",
-            "Functions encapsulated in a static public Solution class.",
             "Python floor division '//' converted to Math.floorDiv() for negative-safe semantics.",
             "Exceptions mapped from Python ValueError to Java IllegalArgumentException.",
         ]
@@ -878,6 +1011,7 @@ def translate_code(source_code: str, source_language: str, target_language: str)
         transpiler = PythonToCppTranspiler()
         res = transpiler.transpile(code)
         diffs = [
+            "Generated standard C++ entry point: int main() { ... return 0; }.",
             "Python dynamic typing converted to static C++ types and std::vector.",
             "Python print() mapped to std::cout << ... << std::endl.",
             "Python floor division '//' converted to std::floor(static_cast<double>(a) / b).",
@@ -889,7 +1023,7 @@ def translate_code(source_code: str, source_language: str, target_language: str)
     if src == "java" and tgt == "python":
         res = java_or_cpp_to_python(code)
         diffs = [
-            "Java class and static method boilerplate removed; converted to idiomatic Python def.",
+            "Java public class Main and main(String[] args) converted to Python if __name__ == '__main__': entry point.",
             "Primitive static types (int, boolean, String) converted to dynamic Python typing.",
             "Index loops converted to range(len(arr)).",
             "System.out.println() converted to print().",
@@ -900,7 +1034,7 @@ def translate_code(source_code: str, source_language: str, target_language: str)
     if "c" in src and tgt == "python":
         res = java_or_cpp_to_python(code)
         diffs = [
-            "C++ header directives and manual typing removed; converted to Python def.",
+            "C++ int main() converted to Python if __name__ == '__main__': block.",
             "std::cout replaced with built-in print().",
             "std::vector converted to Python list idioms.",
             "throw std::invalid_argument replaced with raise ValueError().",
@@ -911,6 +1045,7 @@ def translate_code(source_code: str, source_language: str, target_language: str)
     if src == "java" and "c" in tgt:
         res = java_to_cpp(code)
         diffs = [
+            "Java main(String[] args) mapped to C++ int main().",
             "Java System.out.println mapped to C++ std::cout.",
             "Java String and ArrayList mapped to std::string and std::vector.",
             "Math.floorDiv mapped to std::floor division.",
@@ -921,7 +1056,7 @@ def translate_code(source_code: str, source_language: str, target_language: str)
     if "c" in src and tgt == "java":
         res = cpp_to_java(code)
         diffs = [
-            "C++ functions wrapped in Java public class Solution.",
+            "C++ code encapsulated in public class Main with public static void main(String[] args).",
             "std::cout mapped to System.out.println.",
             "std::vector mapped to Java array / collections.",
         ]

@@ -156,7 +156,7 @@ export default function App() {
     if (!translatedCode) return;
     const extMap: Record<string, string> = { Python: 'py', Java: 'java', 'C++': 'cpp' };
     const ext = extMap[targetLang] || 'txt';
-    const filename = `Solution.${ext}`;
+    const filename = `Main.${ext}`;
     const blob = new Blob([translatedCode], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
