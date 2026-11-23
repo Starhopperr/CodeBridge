@@ -28,6 +28,12 @@ P2_SYSTEM = (
     "Account for integer division, numeric types, nulls, truthiness, strings, indexing, "
     "collections, mutability and exceptions. Do not invent dependencies. "
     "State assumptions and unsupported features. "
+    "CRITICAL ENTRY POINT REQUIREMENTS:\n"
+    "- If target is Java: Encapsulate all code inside 'public class Main' (NEVER use 'Solution'). "
+    "All procedural and test statements MUST reside inside 'public static void main(String[] args)'. "
+    "Helper methods must be declared as 'public static'. The output must compile directly with javac Main.java.\n"
+    "- If target is C++: Procedural code and test statements must reside inside 'int main() { ... return 0; }'.\n"
+    "- If target is Python: Top-level execution statements must be guarded by 'if __name__ == \"__main__\":'.\n"
     "Return ONLY valid JSON. Do not claim execution or verification."
 )
 
@@ -69,7 +75,7 @@ P1_SCHEMA_HINT = """{
 }"""
 
 P2_SCHEMA_HINT = """{
-  "translated_code": "string — complete code in target language",
+  "translated_code": "string — complete code in target language (Java must be enclosed in 'public class Main' with 'public static void main(String[] args)'; C++ must include 'int main()'; Python must use 'if __name__ == \"__main__\":')",
   "target_language": "string — target language name",
   "language_differences": ["list of key differences between source and target language handling"],
   "assumptions": ["list of assumptions made during translation"],

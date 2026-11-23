@@ -915,6 +915,31 @@ def java_to_cpp(code: str) -> str:
     out = re.sub(r"Math\.abs\(", "std::abs(", out)
     out = re.sub(r"([A-Za-z0-9_]+)\.length\b", r"\1.size()", out)
 
+    # Format indentation cleanly (0 base indent)
+    indent_level = 0
+    formatted_lines = []
+    in_main = False
+    has_return_zero = False
+    for raw_l in out.splitlines():
+        line = raw_l.strip()
+        if not line:
+            formatted_lines.append("")
+            continue
+        if line.startswith("int main()"):
+            in_main = True
+            has_return_zero = False
+        if in_main and line.startswith("return 0"):
+            has_return_zero = True
+        if line.startswith("}"):
+            if in_main and indent_level == 1:
+                if not has_return_zero:
+                    formatted_lines.append("    return 0;")
+                in_main = False
+            indent_level = max(0, indent_level - 1)
+        formatted_lines.append("    " * indent_level + line)
+        if line.endswith("{"):
+            indent_level += 1
+
     headers = [
         "#include <iostream>",
         "#include <vector>",
@@ -923,10 +948,13 @@ def java_to_cpp(code: str) -> str:
         "#include <stdexcept>",
     ]
 
+    while formatted_lines and not formatted_lines[0].strip():
+        formatted_lines.pop(0)
+    out_body = "\n".join(formatted_lines).rstrip()
     if not has_java_main:
-        out = out.strip() + "\n\nint main() {\n    return 0;\n}"
+        out_body = out_body + "\n\nint main() {\n    return 0;\n}"
 
-    return "\n".join(headers) + "\n\n" + out.strip() + "\n"
+    return "\n".join(headers) + "\n\n" + out_body + "\n"
 
 
 def cpp_to_java(code: str) -> str:
@@ -941,6 +969,7 @@ def cpp_to_java(code: str) -> str:
     has_cpp_main = bool(re.search(r"\bint\s+main\s*\(", out))
 
     out = re.sub(r"std::cout\s*<<\s*(.*?)\s*<<\s*std::endl;", r"System.out.println(\1);", out)
+    out = re.sub(r"std::cout\s*<<\s*(.*?);", r"System.out.print(\1);", out)
     out = re.sub(r"std::string", "String", out)
     out = re.sub(r"\bbool\b", "boolean", out)
     out = re.sub(r"\bnullptr\b", "null", out)
@@ -955,21 +984,31 @@ def cpp_to_java(code: str) -> str:
     out = re.sub(r"\bint\s+main\s*\([^)]*\)\s*\{", "public static void main(String[] args) {", out)
     out = re.sub(r"return\s+0;\s*", "", out)
 
-    # Polish method headers: remove const and &, add public static
-    polished_lines = []
-    for l in out.splitlines():
-        if re.search(r"\b(int|void|String|boolean|double)\s+[A-Za-z0-9_]+\s*\(", l):
-            l = re.sub(r"const\s+", "", l)
-            l = re.sub(r"&", "", l)
-            if not l.strip().startswith(("public", "private", "protected")):
-                l = "    public static " + l.strip()
-            else:
-                l = "    " + l.strip()
-        else:
-            if l.strip():
-                l = "    " + l.strip()
-        polished_lines.append(l)
-    out = "\n".join(polished_lines)
+    # Indent cleanly inside public class Main (base indent: 1 level = 4 spaces)
+    indent_level = 1
+    formatted_lines = []
+    for raw_l in out.splitlines():
+        line = raw_l.strip()
+        if not line:
+            formatted_lines.append("")
+            continue
+        if line.startswith("}"):
+            indent_level = max(1, indent_level - 1)
+
+        # Check method declaration
+        if re.search(r"\b(int|void|String|boolean|double|int\[\])\s+[A-Za-z0-9_]+\s*\(", line):
+            line = re.sub(r"const\s+", "", line)
+            line = re.sub(r"&", "", line)
+            if not line.startswith(("public", "private", "protected")):
+                line = "public static " + line
+
+        formatted_lines.append("    " * indent_level + line)
+        if line.endswith("{"):
+            indent_level += 1
+
+    while formatted_lines and not formatted_lines[0].strip():
+        formatted_lines.pop(0)
+    out = "\n".join(formatted_lines).rstrip()
 
     if not has_cpp_main:
         out = out + "\n\n    public static void main(String[] args) {\n        // Entry point\n    }"
