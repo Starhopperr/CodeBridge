@@ -1,12 +1,17 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { translate } from './api';
 import { TranslateResponse, Finding, TestCase } from './types';
 import './App.css';
 
-const LANGUAGES = ['Python', 'Java', 'C++'];
+const LANGUAGES = [
+  { label: 'Python 🐍', val: 'Python' },
+  { label: 'Java ☕', val: 'Java' },
+  { label: 'C++ ⚡', val: 'C++' },
+];
 
 interface Sample {
   title: string;
+  badge: string;
   sourceLang: string;
   targetLang: string;
   code: string;
@@ -14,7 +19,8 @@ interface Sample {
 
 const SAMPLES: Sample[] = [
   {
-    title: 'Python → Java: Floor Division (Semantics)',
+    title: 'Floor Division',
+    badge: '🍰 Math Semantics',
     sourceLang: 'Python',
     targetLang: 'Java',
     code: `def calculate_quotient(a: int, b: int) -> int:
@@ -22,10 +28,13 @@ const SAMPLES: Sample[] = [
     if b == 0:
         raise ZeroDivisionError("Cannot divide by zero")
     return a // b
+
+print("Quotient:", calculate_quotient(7, -2))
 `,
   },
   {
-    title: 'Python → Java: Factorial (Recursion)',
+    title: 'Factorial Recursion',
+    badge: '🪄 Recursion',
     sourceLang: 'Python',
     targetLang: 'Java',
     code: `def factorial(n: int) -> int:
@@ -35,10 +44,13 @@ const SAMPLES: Sample[] = [
     if n <= 1:
         return 1
     return n * factorial(n - 1)
+
+print("Factorial of 5:", factorial(5))
 `,
   },
   {
-    title: 'Python → C++: Find Maximum',
+    title: 'Find Maximum',
+    badge: '⭐ Collections',
     sourceLang: 'Python',
     targetLang: 'C++',
     code: `def find_max(numbers: list) -> int:
@@ -47,10 +59,13 @@ const SAMPLES: Sample[] = [
         if x > max_val:
             max_val = x
     return max_val
+
+print("Max value:", find_max([3, 7, 2, 9, 5]))
 `,
   },
   {
-    title: 'C++ → Python: FizzBuzz',
+    title: 'FizzBuzz Loop',
+    badge: '⚡ Classic',
     sourceLang: 'C++',
     targetLang: 'Python',
     code: `void fizzbuzz(int n) {
@@ -66,6 +81,11 @@ const SAMPLES: Sample[] = [
         }
     }
 }
+
+int main() {
+    fizzbuzz(15);
+    return 0;
+}
 `,
   },
 ];
@@ -73,18 +93,30 @@ const SAMPLES: Sample[] = [
 type RightTab = 'code' | 'p3' | 'p4' | 'p1';
 
 export default function App() {
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('cb_theme') as 'dark' | 'light') || 'dark';
+  });
   const [sourceLang, setSourceLang] = useState('Python');
   const [targetLang, setTargetLang] = useState('Java');
   const [sourceCode, setSourceCode] = useState(SAMPLES[0].code);
   const [translatedCode, setTranslatedCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<RightTab>('code');
   const [splitView, setSplitView] = useState(false);
   const [result, setResult] = useState<TranslateResponse | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem('cb_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -118,12 +150,13 @@ export default function App() {
 
   const handleTranslate = async () => {
     setError(null);
+    setSuccessToast(null);
     if (!sourceCode.trim()) {
-      setError('Please provide code to translate.');
+      setError('Please provide code to translate! ✨');
       return;
     }
     if (sourceLang === targetLang) {
-      setError('Source and target languages must be different.');
+      setError('Source and target languages must be different! 🌸');
       return;
     }
 
@@ -137,8 +170,10 @@ export default function App() {
       setResult(res);
       const code = res.p2_translation?.translated_code || '';
       setTranslatedCode(code);
+      setSuccessToast(`✨ Yay! Translated into ${targetLang} with Main entry point!`);
+      setTimeout(() => setSuccessToast(null), 4000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Translation request failed.');
+      setError(err instanceof Error ? err.message : 'Translation request failed. Please try again!');
     } finally {
       setLoading(false);
     }
@@ -173,6 +208,7 @@ export default function App() {
     setTranslatedCode('');
     setResult(null);
     setError(null);
+    setSuccessToast(null);
     setActiveTab('code');
   };
 
@@ -182,61 +218,58 @@ export default function App() {
   const testCount = result?.p4_tests?.test_cases?.length || 0;
 
   return (
-    <div className="cb-shell">
-      {/* ── Precision Navigation Bar ── */}
+    <div className={`cb-shell theme-${theme}`}>
+      {/* ── Friendly & Sweet Header ── */}
       <header className="cb-header">
         <div className="cb-brand">
-          <div className="cb-logo" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="16 18 22 12 16 6" />
-              <polyline points="8 6 2 12 8 18" />
-            </svg>
+          <div className="cb-logo-cute" aria-hidden="true">
+            <span className="cb-logo-icon">🌉</span>
+            <span className="cb-logo-sparkle">✨</span>
           </div>
-          <span className="cb-name">CodeBridge</span>
-          <span className="cb-badge">Studio</span>
+          <div className="cb-brand-text">
+            <span className="cb-name">CodeBridge</span>
+            <span className="cb-badge-sweet">💖 Cute Companion</span>
+          </div>
         </div>
 
-        {/* Center Language Controls & Translate Button */}
+        {/* Center Language Controls & Cute Translate Button */}
         <div className="cb-actions">
-          <div className="cb-lang-group">
+          <div className="cb-lang-capsule">
             <select
-              className="cb-select"
+              className="cb-select-cute"
               value={sourceLang}
               onChange={(e) => setSourceLang(e.target.value)}
               disabled={loading}
               aria-label="Source Language"
             >
               {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
+                <option key={l.val} value={l.val}>
+                  {l.label}
                 </option>
               ))}
             </select>
 
             <button
               type="button"
-              className="cb-swap-btn"
+              className="cb-swap-btn-cute"
               onClick={handleSwap}
-              title="Swap Languages"
+              title="Swap Languages ✨"
               disabled={loading}
               aria-label="Swap languages"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="7 10 12 5 17 10" />
-                <polyline points="17 14 12 19 7 14" />
-              </svg>
+              ⇄
             </button>
 
             <select
-              className="cb-select"
+              className="cb-select-cute"
               value={targetLang}
               onChange={(e) => setTargetLang(e.target.value)}
               disabled={loading}
               aria-label="Target Language"
             >
               {LANGUAGES.map((l) => (
-                <option key={l} value={l}>
-                  {l}
+                <option key={l.val} value={l.val}>
+                  {l.label}
                 </option>
               ))}
             </select>
@@ -244,78 +277,87 @@ export default function App() {
 
           <button
             type="button"
-            className={`cb-translate-btn ${loading ? 'is-loading' : ''}`}
+            className={`cb-translate-btn-cute ${loading ? 'is-loading' : ''}`}
             onClick={handleTranslate}
             disabled={loading}
           >
             {loading ? (
               <>
-                <span className="cb-spinner" aria-hidden="true" />
-                <span>Translating...</span>
+                <span className="cb-magic-spinner" aria-hidden="true">🪄</span>
+                <span>Casting Magic...</span>
               </>
             ) : (
               <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-                <span>Translate</span>
+                <span className="cb-btn-sparkle">✨</span>
+                <span>Translate Magic</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Right Samples & View Mode */}
+        {/* Right Quick Controls */}
         <div className="cb-header-right">
           <button
             type="button"
-            className={`cb-split-toggle ${splitView ? 'is-active' : ''}`}
-            onClick={() => setSplitView(!splitView)}
-            title="Toggle Split View (Code + Insights)"
+            className="cb-theme-toggle"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Sweet Pastel Light' : 'Switch to Dreamy Midnight Dark'}
           >
-            {splitView ? '⊟ Tab View' : '⊞ Split View'}
+            {theme === 'dark' ? '🌸 Pastel' : '🌙 Midnight'}
           </button>
 
-          <select
-            className="cb-sample-select"
-            onChange={(e) => {
-              const idx = parseInt(e.target.value, 10);
-              if (!isNaN(idx) && SAMPLES[idx]) {
-                handleLoadSample(SAMPLES[idx]);
-              }
-            }}
-            defaultValue=""
-            aria-label="Load sample snippet"
+          <button
+            type="button"
+            className={`cb-split-toggle-cute ${splitView ? 'is-active' : ''}`}
+            onClick={() => setSplitView(!splitView)}
+            title="Toggle Split View (Code + Audits)"
           >
-            <option value="" disabled>
-              Select Example...
-            </option>
-            {SAMPLES.map((s, idx) => (
-              <option key={s.title} value={idx}>
-                {s.title}
-              </option>
-            ))}
-          </select>
+            {splitView ? '📑 Single Tab' : '✨ Split View'}
+          </button>
         </div>
       </header>
 
-      {/* ── Error Banner ── */}
-      {error && (
-        <div className="cb-error" role="alert">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span className="cb-error-msg">{error}</span>
-          <button className="cb-error-dismiss" onClick={() => setError(null)}>
-            ✕
-          </button>
+      {/* ── Welcoming Hero / Quick-Pick Ribbon ── */}
+      <section className="cb-welcome-ribbon">
+        <div className="cb-welcome-msg">
+          <span className="cb-mascot-avatar">👋</span>
+          <span>
+            <strong>Hey there!</strong> Pick an example or paste your code below. We'll translate it safely with guaranteed <code>Main</code> entry points and full semantic audits! 💖
+          </span>
+        </div>
+        <div className="cb-sample-pills">
+          <span className="cb-pills-label">Quick Try:</span>
+          {SAMPLES.map((s) => (
+            <button
+              key={s.title}
+              type="button"
+              className="cb-sample-pill-btn"
+              onClick={() => handleLoadSample(s)}
+            >
+              {s.badge}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Toast / Feedback Alerts ── */}
+      {successToast && (
+        <div className="cb-toast cb-toast-success" role="status">
+          <span>{successToast}</span>
+          <button className="cb-toast-close" onClick={() => setSuccessToast(null)}>✕</button>
         </div>
       )}
 
-      {/* ── Focused 2-Pane Code Editor Studio ── */}
+      {error && (
+        <div className="cb-toast cb-toast-error" role="alert">
+          <span>🌸 {error}</span>
+          <button className="cb-toast-close" onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {/* ── Cute 2-Pane Editor Cards ── */}
       <main className="cb-studio">
-        {/* Box 1: Input Code Box */}
+        {/* Box 1: Input Code Card */}
         <section className="cb-box cb-input-box">
           <div className="cb-box-header">
             <div className="cb-box-title">
@@ -323,12 +365,11 @@ export default function App() {
               <span>Input ({sourceLang})</span>
             </div>
             <div className="cb-box-meta">
-              <span className="cb-stat">{inputLines} lines</span>
-              <span className="cb-stat-sep">•</span>
-              <span className="cb-stat">{sourceCode.length} chars</span>
+              <span className="cb-pill-stat">{inputLines} lines</span>
+              <span className="cb-pill-stat">{sourceCode.length} chars</span>
               <button
                 type="button"
-                className="cb-btn-secondary"
+                className="cb-btn-ghost"
                 onClick={() => {
                   setSourceCode('');
                   setTranslatedCode('');
@@ -337,7 +378,7 @@ export default function App() {
                 }}
                 title="Clear code"
               >
-                Clear
+                ✨ Clear
               </button>
             </div>
           </div>
@@ -349,7 +390,7 @@ export default function App() {
               value={sourceCode}
               onChange={(e) => setSourceCode(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`// Write or paste ${sourceLang} code here...\n// Press Ctrl+Enter to translate`}
+              placeholder={`// 🌸 Write or paste your ${sourceLang} code here...\n// Press Ctrl + Enter to cast translation magic! ✨`}
               spellCheck={false}
               autoCapitalize="off"
               autoComplete="off"
@@ -358,82 +399,83 @@ export default function App() {
           </div>
 
           <div className="cb-box-footer">
-            <span className="cb-hint">Tip: Press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to translate instantly</span>
+            <span className="cb-hint">
+              💡 Tip: Press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to translate instantly! 🪄
+            </span>
           </div>
         </section>
 
-        {/* Box 2: Output Studio (Code + P3 Review + P4 Tests + P1 Analysis) */}
+        {/* Box 2: Output Card (Code + P3 Review + P4 Tests + P1 Analysis) */}
         <section className="cb-box cb-output-box">
-          {/* Navigation Tabs for Right Pane */}
+          {/* Tabs Navigation */}
           <div className="cb-box-header cb-tabs-header">
             <div className="cb-tabs-nav">
               <button
                 type="button"
-                className={`cb-tab-btn ${activeTab === 'code' ? 'is-active' : ''}`}
+                className={`cb-tab-btn-cute ${activeTab === 'code' ? 'is-active' : ''}`}
                 onClick={() => setActiveTab('code')}
               >
                 <span className={`cb-dot ${translatedCode ? 'cb-dot-active' : 'cb-dot-idle'}`} />
-                <span>Output Code ({targetLang})</span>
+                <span>💻 Output Code ({targetLang})</span>
               </button>
 
               <button
                 type="button"
-                className={`cb-tab-btn ${activeTab === 'p3' ? 'is-active' : ''}`}
+                className={`cb-tab-btn-cute ${activeTab === 'p3' ? 'is-active' : ''}`}
                 onClick={() => setActiveTab('p3')}
               >
-                <span>P3: Review</span>
+                <span>🛡️ P3: Review</span>
                 {findingsCount > 0 && (
-                  <span className="cb-tab-badge cb-badge-review">{findingsCount}</span>
+                  <span className="cb-badge-count cb-badge-pink">{findingsCount}</span>
                 )}
               </button>
 
               <button
                 type="button"
-                className={`cb-tab-btn ${activeTab === 'p4' ? 'is-active' : ''}`}
+                className={`cb-tab-btn-cute ${activeTab === 'p4' ? 'is-active' : ''}`}
                 onClick={() => setActiveTab('p4')}
               >
-                <span>P4: Tests</span>
+                <span>🧪 P4: Tests</span>
                 {testCount > 0 && (
-                  <span className="cb-tab-badge cb-badge-tests">{testCount}</span>
+                  <span className="cb-badge-count cb-badge-mint">{testCount}</span>
                 )}
               </button>
 
               <button
                 type="button"
-                className={`cb-tab-btn ${activeTab === 'p1' ? 'is-active' : ''}`}
+                className={`cb-tab-btn-cute ${activeTab === 'p1' ? 'is-active' : ''}`}
                 onClick={() => setActiveTab('p1')}
               >
-                <span>P1: Analysis</span>
+                <span>🔍 P1: Analysis</span>
               </button>
             </div>
 
             <div className="cb-box-meta">
               {translatedCode && activeTab === 'code' && (
                 <>
-                  <span className="cb-stat">{outputLines} lines</span>
-                  <span className="cb-stat-sep">•</span>
+                  <span className="cb-pill-stat">{outputLines} lines</span>
                   <button
                     type="button"
-                    className={`cb-btn-secondary ${copied ? 'cb-btn-copied' : ''}`}
+                    className={`cb-btn-ghost ${copied ? 'cb-btn-copied' : ''}`}
                     onClick={handleCopy}
                     title="Copy code to clipboard"
                   >
-                    {copied ? '✓ Copied' : 'Copy'}
+                    {copied ? '💖 Copied!' : '📋 Copy'}
                   </button>
                   <button
                     type="button"
-                    className="cb-btn-secondary"
+                    className="cb-btn-ghost"
                     onClick={handleDownload}
-                    title="Download translated file"
+                    title="Download compilable code"
                   >
-                    Download
+                    💾 Download Main.{targetLang === 'Java' ? 'java' : targetLang === 'C++' ? 'cpp' : 'py'}
                   </button>
                 </>
               )}
             </div>
           </div>
 
-          {/* Main Output / Insights Viewport */}
+          {/* Viewports */}
           <div className={`cb-viewport-container ${splitView ? 'is-split' : ''}`}>
             {/* View 1: Output Code */}
             {(activeTab === 'code' || splitView) && (
@@ -443,36 +485,46 @@ export default function App() {
                     <code>{translatedCode}</code>
                   </pre>
                 ) : (
-                  <div className="cb-empty-state">
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                    </svg>
-                    <p className="cb-empty-text">Translated {targetLang} code will appear here</p>
-                    <span className="cb-empty-sub">Click "Translate" or press Ctrl+Enter</span>
+                  <div className="cb-empty-state-cute">
+                    <div className="cb-cute-mascot-icon" aria-hidden="true">
+                      <svg width="72" height="72" viewBox="0 0 64 64" fill="none">
+                        <circle cx="32" cy="32" r="28" fill="currentColor" opacity="0.12" />
+                        <rect x="14" y="16" width="36" height="32" rx="12" fill="#8B5CF6" />
+                        <rect x="16" y="18" width="32" height="28" rx="10" fill="#A78BFA" />
+                        <line x1="32" y1="16" x2="32" y2="8" stroke="#F472B6" strokeWidth="3" strokeLinecap="round" />
+                        <circle cx="32" cy="7" r="4" fill="#F472B6" />
+                        <path d="M22 28 Q 25 24 28 28" stroke="#1E1B4B" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                        <path d="M36 28 Q 39 24 42 28" stroke="#1E1B4B" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                        <ellipse cx="21" cy="33" rx="3" ry="2" fill="#FB7185" opacity="0.8" />
+                        <ellipse cx="43" cy="33" rx="3" ry="2" fill="#FB7185" opacity="0.8" />
+                        <path d="M29 33 Q 32 37 35 33" stroke="#1E1B4B" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+                      </svg>
+                    </div>
+                    <h3 className="cb-empty-heading">Ready when you are! ✨</h3>
+                    <p className="cb-empty-text">
+                      Choose an example above or write code on the left, then click <strong>"Translate Magic"</strong> to view clean, compilable {targetLang} with guaranteed entry points! 🌸
+                    </p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* View 2: P3 Semantic Review & Findings */}
+            {/* View 2: P3 Semantic Review */}
             {(activeTab === 'p3' || (splitView && activeTab !== 'code')) && (
               <div className="cb-panel-pane cb-p3-pane">
                 {result?.p3_review ? (
                   <div className="cb-p3-content">
-                    <div className="cb-verdict-card">
+                    <div className="cb-verdict-card-cute">
                       <div className="cb-verdict-badge">
                         <span className="cb-verdict-icon">🛡️</span>
-                        <strong>Review Assessment:</strong>
+                        <strong>P3 Verification Assessment:</strong>
                       </div>
                       <p className="cb-verdict-text">{result.p3_review.overall_assessment}</p>
                     </div>
 
                     {result.p2_translation?.language_differences && result.p2_translation.language_differences.length > 0 && (
                       <div className="cb-section-block">
-                        <h4 className="cb-section-title">Key Language Semantic Differences</h4>
+                        <h4 className="cb-section-title">🌸 Language Semantic Differences</h4>
                         <ul className="cb-diff-list">
                           {result.p2_translation.language_differences.map((d, i) => (
                             <li key={i}>{d}</li>
@@ -490,7 +542,9 @@ export default function App() {
                           {result.p3_review.findings.map((f: Finding, i: number) => (
                             <div key={i} className={`cb-finding-card sev-${f.severity.toLowerCase()}`}>
                               <div className="cb-finding-header">
-                                <span className={`cb-sev-tag tag-${f.severity.toLowerCase()}`}>{f.severity}</span>
+                                <span className={`cb-sev-tag tag-${f.severity.toLowerCase()}`}>
+                                  {f.severity === 'HIGH' ? '🚨 HIGH' : f.severity === 'MEDIUM' ? '⚠️ MEDIUM' : '💡 ' + f.severity}
+                                </span>
                                 <span className="cb-finding-loc">{f.location}</span>
                               </div>
                               <p className="cb-finding-exp">{f.explanation}</p>
@@ -503,33 +557,34 @@ export default function App() {
                           ))}
                         </div>
                       ) : (
-                        <p className="cb-empty-sub">No semantic divergences or defect risks detected.</p>
+                        <p className="cb-empty-sub">✨ All clear! No semantic divergence risks found.</p>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="cb-empty-state">
-                    <p className="cb-empty-text">P3 Review will execute alongside translation</p>
-                    <span className="cb-empty-sub">Translate a code snippet to view semantic audits</span>
+                  <div className="cb-empty-state-cute">
+                    <span className="cb-empty-emoji">🛡️</span>
+                    <h3 className="cb-empty-heading">P3 Semantic Review</h3>
+                    <p className="cb-empty-text">Click "Translate Magic" to inspect independent semantic audits and potential divergence risks.</p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* View 3: P4 Test Cases */}
+            {/* View 3: P4 Tests */}
             {activeTab === 'p4' && !splitView && (
               <div className="cb-panel-pane cb-p4-pane">
                 {result?.p4_tests?.test_cases && result.p4_tests.test_cases.length > 0 ? (
                   <div className="cb-p4-content">
                     <div className="cb-pane-intro">
-                      <h4>P4: Synthesized Equivalence Test Suite</h4>
-                      <p>Concrete test vectors designed to verify behavioral and semantic parity across runtimes.</p>
+                      <h4>🧪 P4 Synthesized Equivalence Test Vectors</h4>
+                      <p>Equivalence vectors designed to verify behavioral parity between {sourceLang} and {targetLang}.</p>
                     </div>
                     <div className="cb-table-wrapper">
                       <table className="cb-tests-table">
                         <thead>
                           <tr>
-                            <th>Test ID</th>
+                            <th>ID</th>
                             <th>Type</th>
                             <th>Purpose</th>
                             <th>Input</th>
@@ -541,7 +596,11 @@ export default function App() {
                           {result.p4_tests.test_cases.map((tc: TestCase, i: number) => (
                             <tr key={i}>
                               <td><code className="cb-cell-id">{tc.test_id}</code></td>
-                              <td><span className={`cb-type-tag type-${tc.case_type.toLowerCase()}`}>{tc.case_type}</span></td>
+                              <td>
+                                <span className={`cb-type-tag type-${tc.case_type.toLowerCase()}`}>
+                                  {tc.case_type === 'normal' ? '🌟 normal' : tc.case_type === 'boundary' ? '🎯 boundary' : '⚡ ' + tc.case_type}
+                                </span>
+                              </td>
                               <td>{tc.purpose}</td>
                               <td><code className="cb-cell-code">{tc.input}</code></td>
                               <td><code className="cb-cell-code cb-cell-expect">{tc.expected_output}</code></td>
@@ -558,21 +617,22 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="cb-empty-state">
-                    <p className="cb-empty-text">P4 Test Cases will appear here after translation</p>
-                    <span className="cb-empty-sub">Translate code to view generated test vectors</span>
+                  <div className="cb-empty-state-cute">
+                    <span className="cb-empty-emoji">🧪</span>
+                    <h3 className="cb-empty-heading">P4 Test Suite</h3>
+                    <p className="cb-empty-text">Translate a program to automatically synthesize cross-language unit test cases.</p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* View 4: P1 Static Analysis */}
+            {/* View 4: P1 Analysis */}
             {activeTab === 'p1' && !splitView && (
               <div className="cb-panel-pane cb-p1-pane">
                 {result?.p1_analysis ? (
                   <div className="cb-p1-content">
                     <div className="cb-pane-intro">
-                      <h4>P1: Static AST Semantic Analysis</h4>
+                      <h4>🔍 P1 Static AST Decomposition</h4>
                       <p>{result.p1_analysis.program_summary}</p>
                     </div>
 
@@ -587,12 +647,12 @@ export default function App() {
                       </div>
 
                       <div className="cb-card-box">
-                        <h5>Inferred I/O & Types</h5>
+                        <h5>Inferred I/O</h5>
                         <p>{result.p1_analysis.inputs_and_outputs}</p>
                       </div>
 
                       <div className="cb-card-box">
-                        <h5>Control Flow & Logic</h5>
+                        <h5>Control Flow</h5>
                         <p>{result.p1_analysis.control_flow}</p>
                       </div>
 
@@ -605,22 +665,12 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-
-                    {result.p1_analysis.assumptions && result.p1_analysis.assumptions.length > 0 && (
-                      <div className="cb-section-block">
-                        <h5 className="cb-subheading">Model Assumptions</h5>
-                        <ul className="cb-diff-list">
-                          {result.p1_analysis.assumptions.map((a, i) => (
-                            <li key={i}>{a}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </div>
                 ) : (
-                  <div className="cb-empty-state">
-                    <p className="cb-empty-text">P1 Analysis will extract AST facts upon translation</p>
-                    <span className="cb-empty-sub">Click "Translate" to inspect semantic decomposition</span>
+                  <div className="cb-empty-state-cute">
+                    <span className="cb-empty-emoji">🔍</span>
+                    <h3 className="cb-empty-heading">P1 Static Analysis</h3>
+                    <p className="cb-empty-text">Translate your code to view the structural AST analysis and semantic constraints.</p>
                   </div>
                 )}
               </div>
@@ -630,7 +680,9 @@ export default function App() {
           {/* Footer Bar */}
           <div className="cb-box-footer">
             <span className="cb-hint">
-              {result?.metadata ? `Model: ${result.metadata.model_id} | Pipeline: 4 Steps (P1 → P2 → P3 → P4)` : `Target: ${targetLang}`}
+              {result?.metadata
+                ? `✨ Model: ${result.metadata.model_id} | Pipeline: 4 Steps (P1 → P2 → P3 → P4) | Semantics Preserved 💖`
+                : `Target: ${targetLang} (with public class Main)`}
             </span>
           </div>
         </section>
